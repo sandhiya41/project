@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | SmartShield AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="bg-animation"></div>
+    <nav class="nav">
+        <div class="logo">🛡️ SmartShield AI</div>
+        <div class="nav-links">
+            <span id="userName" style="margin-right: 1rem; color: var(--text-dim);">User</span>
+            <button onclick="logout()" class="btn btn-primary"
+                style="padding: 0.4rem 1rem; background: var(--danger);">Logout</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Scans</div>
+                <div class="stat-value" id="totalScans">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Spam Detected</div>
+                <div class="stat-value" id="spamDetected" style="color: var(--danger);">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Accuracy Rate</div>
+                <div class="stat-value" style="color: var(--success);">98.4%</div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="left-col">
+                <div class="scan-card">
+                    <h2 style="margin-bottom: 1.5rem;">New Scan</h2>
+                    <div class="tabs">
+                        <div class="tab active" onclick="switchTab('email', this)">📧 Email</div>
+                        <div class="tab" onclick="switchTab('whatsapp', this)">💬 WhatsApp</div>
+                        <div class="tab" onclick="switchTab('call', this)">📞 Call</div>
+                        <div class="tab" onclick="switchTab('voice', this)">🎙️ Voice</div>
+                    </div>
+
+                    <div id="textInputArea">
+                        <textarea id="scanText" placeholder="Paste your text or content here..."></textarea>
+                        <button onclick="handleTextScan()" class="btn btn-primary" id="scanBtn">Analyze with AI</button>
+                    </div>
+
+                    <div id="voiceInputArea"
+                        style="display: none; border: 2px dashed #30363d; padding: 2rem; text-align: center; border-radius: 8px;">
+                        <input type="file" id="voiceFile" style="display: none;" accept="audio/*">
+                        <label for="voiceFile" style="cursor: pointer;">
+                            <span style="font-size: 2rem;">📤</span><br>
+                            Click to upload .wav or .mp3 file
+                        </label>
+                        <div id="fileNameDisplay" style="margin-top: 1rem; color: var(--accent-color);"></div>
+                        <button onclick="handleVoiceScan()" class="btn btn-primary" style="margin-top: 1rem;"
+                            id="voiceScanBtn">Run Voice Analysis</button>
+                    </div>
+
+                    <div id="resultBox" class="result-box">
+                        <h3 id="resultTitle">Analysis Result</h3>
+                        <p id="resultText"></p>
+                        <div style="margin-top: 10px; font-size: 0.9rem; color: var(--text-dim);">
+                            Confidence: <span id="confidenceValue" style="color: var(--accent-color);">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="scan-card">
+                    <h3>Recent Scan History</h3>
+                    <div id="scanHistory" style="margin-top: 1rem;">
+                        <p style="color: var(--text-dim);">No scans yet.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="right-col">
+                <div class="stat-card">
+                    <h3>Distribution</h3>
+                    <canvas id="distChart" style="margin-top: 1rem;"></canvas>
+                </div>
+                <div class="stat-card" style="margin-top: 1.5rem;">
+                    <h3>Security Status</h3>
+                    <div
+                        style="margin-top: 1rem; background: rgba(63, 185, 80, 0.1); padding: 1rem; border-radius: 8px; border: 1px solid var(--success);">
+                        <span style="color: var(--success);">●</span> Encrypted Connection
+                    </div>
+                    <div
+                        style="margin-top: 0.5rem; background: rgba(88, 166, 255, 0.1); padding: 1rem; border-radius: 8px; border: 1px solid var(--primary-color);">
+                        <span style="color: var(--primary-color);">●</span> AI Model: v2.4 Active
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'email';
+        let distChart = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!localStorage.getItem('token')) {
+                window.location.href = '/login';
+                return;
+            }
+            loadStats();
+        });
+
+        function switchTab(type, el) {
+            currentTab = type;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+
+            if (type === 'voice') {
+                document.getElementById('textInputArea').style.display = 'none';
+                document.getElementById('voiceInputArea').style.display = 'block';
+            } else {
+                document.getElementById('textInputArea').style.display = 'block';
+                document.getElementById('voiceInputArea').style.display = 'none';
+                document.getElementById('scanText').placeholder = `Paste ${type} content here...`;
+            }
+            document.getElementById('resultBox').style.display = 'none';
+        }
+
+        document.getElementById('voiceFile').addEventListener('change', function () {
+            document.getElementById('fileNameDisplay').innerText = this.files[0]?.name || "";
+        });
+
+        async function handleTextScan() {
+            const text = document.getElementById('scanText').value;
+            if (!text) return;
+
+            const btn = document.getElementById('scanBtn');
+            btn.innerText = "Analyzing...";
+            btn.disabled = true;
+
+            const res = await fetch('/api/scan/text', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify({ text, type: currentTab })
+            });
+
+            const data = await res.json();
+            displayResult(data);
+            btn.innerText = "Analyze with AI";
+            btn.disabled = false;
+            loadStats();
+        }
+
+        async function handleVoiceScan() {
+            const fileInput = document.getElementById('voiceFile');
+            if (!fileInput.files[0]) return;
+
+            const btn = document.getElementById('voiceScanBtn');
+            btn.innerText = "Analyzing Audio...";
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            const res = await fetch('/api/scan/voice', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                body: formData
+            });
+
+            const data = await res.json();
+            displayResult(data);
+            btn.innerText = "Run Voice Analysis";
+            btn.disabled = false;
+            loadStats();
+        }
+
+        function displayResult(data) {
+            const box = document.getElementById('resultBox');
+            const title = document.getElementById('resultTitle');
+            const text = document.getElementById('resultText');
+            const conf = document.getElementById('confidenceValue');
+
+            box.style.display = 'block';
+            box.className = 'result-box ' + (data.result.toLowerCase().includes('spam') || data.result.toLowerCase().includes('suspicious') ? 'result-spam' : 'result-safe');
+
+            title.innerText = data.result;
+            text.innerText = data.result.toLowerCase().includes('spam')
+                ? "Warning: Our AI has detected signatures of fraud or spam in this content. Proceed with extreme caution."
+                : "Safe: This content appears legitimate according to current AI analysis.";
+
+            conf.innerText = data.confidence + "%";
+        }
+
+        async function loadStats() {
+            const res = await fetch('/api/user/stats', {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            const data = await res.json();
+
+            document.getElementById('totalScans').innerText = data.total_scans;
+            document.getElementById('spamDetected').innerText = data.spam_detected;
+
+            updateChart(data);
+            updateHistory(data.recent_scans);
+        }
+
+        function updateChart(data) {
+            const ctx = document.getElementById('distChart').getContext('2d');
+            if (distChart) distChart.destroy();
+
+            distChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Safe', 'Spam/Fraud'],
+                    datasets: [{
+                        data: [data.safe_scans, data.spam_detected],
+                        backgroundColor: ['#3fb950', '#f85149'],
+                        borderColor: '#0d1117'
+                    }]
+                },
+                options: {
+                    plugins: { legend: { labels: { color: '#c9d1d9' } } }
+                }
+            });
+        }
+
+        function updateHistory(scans) {
+            const history = document.getElementById('scanHistory');
+            if (scans.length === 0) return;
+
+            history.innerHTML = scans.map(s => `
+                <div style="padding: 1rem; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between;">
+                    <div>
+                        <span style="color: var(--accent-color); font-size: 0.8rem; text-transform: uppercase;">${s.type}</span><br>
+                        <strong>${s.result}</strong>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="color: var(--text-dim); font-size: 0.8rem;">${new Date(s.date).toLocaleDateString()}</span><br>
+                        <span style="color: var(--success);">${s.confidence}%</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+        }
+    </script>
+</body>
+
+</html>
